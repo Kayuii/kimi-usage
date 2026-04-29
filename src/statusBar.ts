@@ -84,9 +84,11 @@ export class StatusBar {
         `Resets in ${fmtHours(remainHours)}`;
     }
 
+    let windowText = '…';
     let windowLine = '';
     if (state.windowRemaining !== null && state.windowLimit !== null && state.windowLimit > 0) {
       const winUsedPct = Math.round(((state.windowLimit - state.windowRemaining) / state.windowLimit) * 100);
+      windowText = `${winUsedPct}%`;
       const winReset = state.windowResetAt
         ? fmtHours((state.windowResetAt - Date.now()) / 3_600_000)
         : '?';
@@ -101,8 +103,8 @@ export class StatusBar {
     const updatedLine = state.lastUpdated
       ? `\n\n_Updated ${new Date(state.lastUpdated).toLocaleTimeString()}_` : '';
 
-    // Simplified status bar: only show weekly % and window info
-    this.item.text = `${paceIcon} Kimi ${weeklyText}`;
+    // Status bar: show weekly % and rate window %
+    this.item.text = `${paceIcon} Kimi ${weeklyText} | ${windowText}`;
     const md = new vscode.MarkdownString(
       [weeklyLine, windowLine, parallelLine, updatedLine].join('')
     );
