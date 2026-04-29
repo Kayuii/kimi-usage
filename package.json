@@ -2,7 +2,7 @@
   "name": "kimi-usage",
   "displayName": "Kimi Usage",
   "description": "Monitor Kimi Code quota usage in real-time, with OAuth device-flow sign-in.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "kayuii",
   "license": "MIT",
   "repository": {
