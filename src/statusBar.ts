@@ -85,6 +85,7 @@ export class StatusBar {
     }
 
     let windowText = '…';
+    let windowIcon = '$(pulse)'; // Rate window icon
     let windowLine = '';
     if (state.windowRemaining !== null && state.windowLimit !== null && state.windowLimit > 0) {
       const winUsedPct = Math.round(((state.windowLimit - state.windowRemaining) / state.windowLimit) * 100);
@@ -103,8 +104,8 @@ export class StatusBar {
     const updatedLine = state.lastUpdated
       ? `\n\n_Updated ${new Date(state.lastUpdated).toLocaleTimeString()}_` : '';
 
-    // Status bar: show weekly % and rate window %
-    this.item.text = `${paceIcon} Kimi ${weeklyText} | ${windowText}`;
+    // Status bar: show weekly % with pace emoji | rate window % with pulse icon
+    this.item.text = `${paceIcon} Kimi ${weeklyText} | ${windowIcon} ${windowText}`;
     const md = new vscode.MarkdownString(
       [weeklyLine, windowLine, parallelLine, updatedLine].join('')
     );
