@@ -9,6 +9,7 @@ import {
 } from './oauthService';
 import { StatusBar } from './statusBar';
 import { defaultQuotaState, KimiDeviceCodeResponse, QuotaState } from './types';
+import { UsageTracker } from './usageTracker';
 import {
   deleteApiKey,
   deleteOAuth,
@@ -29,12 +30,18 @@ const CACHE_GRACE_MS = 30 * 1000; // 30s grace period for fast successive refres
 let statusBar: StatusBar;
 let refreshTimer: NodeJS.Timeout | undefined;
 let extensionContext: vscode.ExtensionContext;
+let usageTracker: UsageTracker;
 const state: QuotaState = defaultQuotaState();
 let lastFetchTimestamp: number = 0;
 
 export async function activate(context: vscode.ExtensionContext) {
   extensionContext = context;
   log('Kimi Usage extension activated');
+
+  // Initialize usage tracker for automatic monitoring
+  usageTracker = new UsageTracker(context);
+  usageTracker.startMonitoring();
+  context.subscriptions.push({ dispose: () => usageTracker.dispose() });
 
   state.sessionInputTokens = context.globalState.get<number>('session.inputTokens', 0);
   state.sessionOutputTokens = context.globalState.get<number>('session.outputTokens', 0);
@@ -49,7 +56,7 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.env.openExternal(vscode.Uri.parse(CONSOLE_URL))
     ),
     vscode.commands.registerCommand('kimiUsage.showDashboard', async () => {
-      DashboardPanel.show(state, context);
+      DashboardPanel.show(state, context, usageTracker);
       await refresh();
     }),
     vscode.commands.registerCommand('kimiUsage.showOutput', () => getOutputChannel().show()),
@@ -71,8 +78,13 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'kimiUsage.recordUsage',
       async (opts: { inputTokens?: number; outputTokens?: number } = {}) => {
-        state.sessionInputTokens += opts.inputTokens ?? 0;
-        state.sessionOutputTokens += opts.outputTokens ?? 0;
+        const inputTokens = opts.inputTokens ?? 0;
+        const outputTokens = opts.outputTokens ?? 0;
+        // Record to tracker (auto-tracked for history + CSV export)
+        usageTracker.recordUsage(inputTokens, outputTokens, 1);
+        // Also update session state for status bar display
+        state.sessionInputTokens += inputTokens;
+        state.sessionOutputTokens += outputTokens;
         state.sessionRequests += 1;
         await Promise.all([
           context.globalState.update('session.inputTokens', state.sessionInputTokens),

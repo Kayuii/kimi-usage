@@ -1,13 +1,15 @@
 import * as vscode from 'vscode';
 import { QuotaState } from './types';
-import { fmtHours } from './utils';
+import { UsageTracker } from './usageTracker';
+import { fmtHours, fmtTokens } from './utils';
 
 export class DashboardPanel {
   private static current: DashboardPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
+  private tracker: UsageTracker | undefined;
 
-  static show(state: QuotaState, context: vscode.ExtensionContext): void {
+  static show(state: QuotaState, context: vscode.ExtensionContext, tracker?: UsageTracker): void {
     if (DashboardPanel.current) {
       DashboardPanel.current.panel.reveal();
       DashboardPanel.current.update(state);
@@ -19,7 +21,7 @@ export class DashboardPanel {
       vscode.ViewColumn.Active,
       { enableScripts: false, retainContextWhenHidden: true }
     );
-    DashboardPanel.current = new DashboardPanel(panel, state, context);
+    DashboardPanel.current = new DashboardPanel(panel, state, context, tracker);
   }
 
   static refreshIfOpen(state: QuotaState): void {
@@ -29,9 +31,11 @@ export class DashboardPanel {
   private constructor(
     panel: vscode.WebviewPanel,
     state: QuotaState,
-    _context: vscode.ExtensionContext
+    _context: vscode.ExtensionContext,
+    tracker?: UsageTracker
   ) {
     this.panel = panel;
+    this.tracker = tracker;
     this.update(state);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
   }
@@ -52,6 +56,26 @@ export class DashboardPanel {
     const filled = Math.round(pct / 4);
     const empty = 25 - filled;
     return `<code>[${'█'.repeat(filled)}${'░'.repeat(empty)}] ${pct}%</code>`;
+  }
+
+  private renderUsageHistory(): string {
+    if (!this.tracker) return '';
+    const history = this.tracker.getHistory();
+    if (history.length === 0) return '';
+
+    const daily = this.tracker.getUsageInWindow(24 * 60 * 60 * 1000);
+    const hourly = this.tracker.getUsageInWindow(60 * 60 * 1000);
+
+    return `
+  <h2>Usage History (Auto-tracked)</h2>
+  <div class="kv">
+    <div class="k">Last 24h requests</div><div>${daily.requests}</div>
+    <div class="k">Last 24h tokens</div><div>${fmtTokens(daily.inputTokens + daily.outputTokens)}</div>
+    <div class="k">Last 1h requests</div><div>${hourly.requests}</div>
+    <div class="k">Last 1h tokens</div><div>${fmtTokens(hourly.inputTokens + hourly.outputTokens)}</div>
+    <div class="k">Total log entries</div><div>${history.length}</div>
+  </div>
+    `;
   }
 
   private renderHtml(s: QuotaState): string {
@@ -107,6 +131,8 @@ export class DashboardPanel {
     <div class="k">Output tokens</div><div>${s.sessionOutputTokens}</div>
     <div class="k">Total tokens</div><div>${sessionTokens}</div>
   </div>
+
+  ${this.renderUsageHistory()}
 </body>
 </html>`;
   }
