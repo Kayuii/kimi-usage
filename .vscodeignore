@@ -1,0 +1,38 @@
+# VSCode workspace files
+.vscode/**
+.vscode-test/**
+
+# Source (we ship the bundled output in out/ or dist/)
+src/**
+test/**
+out-test/**
+**/*.ts
+**/*.map
+
+# Tooling configs
+.gitignore
+.gitattributes
+.eslintrc.json
+.eslintignore
+.prettierrc
+.prettierignore
+.mocharc.json
+tsconfig.json
+tsconfig.*.json
+esbuild.js
+
+# Dependencies & build caches
+node_modules/**
+.npmrc
+.yarnrc
+.pnpm-store/**
+
+# Editor / IDE local
+.idea/**
+.claude/**
+
+# Misc
+/tmp/**
+**/.DS_Store
+*.vsix
+coverage/**

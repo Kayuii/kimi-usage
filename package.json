@@ -1,0 +1,100 @@
+{
+  "name": "kimi-usage",
+  "displayName": "Kimi Usage",
+  "description": "Monitor Kimi Code quota usage in real-time, with OAuth device-flow sign-in.",
+  "version": "0.1.0",
+  "publisher": "kayuii",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kayuii/kimi-usage.git"
+  },
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "icon": "img/logo.png",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "kimiUsage.refresh",
+        "title": "Kimi Usage: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kimiUsage.signIn",
+        "title": "Kimi Usage: Sign In (OAuth)",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "kimiUsage.signOut",
+        "title": "Kimi Usage: Sign Out",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "kimiUsage.setApiKey",
+        "title": "Kimi Usage: Set API Key (sk-...)",
+        "icon": "$(key)"
+      },
+      {
+        "command": "kimiUsage.openConsole",
+        "title": "Kimi Usage: Open Kimi Code Console",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "kimiUsage.showDashboard",
+        "title": "Kimi Usage: Show Usage Dashboard",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "kimiUsage.resetSession",
+        "title": "Kimi Usage: Reset Session Counter",
+        "icon": "$(history)"
+      },
+      {
+        "command": "kimiUsage.showOutput",
+        "title": "Kimi Usage: Show Output",
+        "icon": "$(output)"
+      }
+    ],
+    "configuration": {
+      "title": "Kimi Usage",
+      "properties": {
+        "kimiUsage.refreshIntervalMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "How often to refresh quota in minutes."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "node esbuild.js --production",
+    "build": "node esbuild.js",
+    "lint": "eslint src --ext ts",
+    "test": "TS_NODE_PROJECT=tsconfig.test.json mocha"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^16.18.0",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^5.62.0",
+    "@typescript-eslint/parser": "^5.62.0",
+    "esbuild": "^0.19.0",
+    "eslint": "^8.57.0",
+    "mocha": "^11.7.5",
+    "nock": "^14.0.13",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.0"
+  }
+}
