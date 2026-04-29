@@ -4,14 +4,23 @@ import { fmtHours, fmtTokens } from './utils';
 
 export class StatusBar {
   private item: vscode.StatusBarItem;
+  private consoleButton: vscode.StatusBarItem;
 
   constructor() {
     this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
     this.item.show();
+
+    // Quick access button for Kimi Code Console
+    this.consoleButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 89);
+    this.consoleButton.text = '$(link-external) Kimi Console';
+    this.consoleButton.tooltip = 'Open Kimi Code Console (https://www.kimi.com/code/console)';
+    this.consoleButton.command = 'kimiUsage.openConsole';
+    this.consoleButton.show();
   }
 
   dispose(): void {
     this.item.dispose();
+    this.consoleButton.dispose();
   }
 
   private paceEmoji(usedPct: number, elapsedPct: number): string {

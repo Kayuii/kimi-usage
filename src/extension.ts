@@ -23,11 +23,14 @@ import {
 } from './utils';
 
 const CONSOLE_URL = 'https://www.kimi.com/code/console';
+const CACHE_KEY = 'kimi.lastFetchTimestamp';
+const CACHE_GRACE_MS = 30 * 1000; // 30s grace period for fast successive refreshes
 
 let statusBar: StatusBar;
 let refreshTimer: NodeJS.Timeout | undefined;
 let extensionContext: vscode.ExtensionContext;
 const state: QuotaState = defaultQuotaState();
+let lastFetchTimestamp: number = 0;
 
 export async function activate(context: vscode.ExtensionContext) {
   extensionContext = context;
@@ -41,7 +44,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: () => statusBar.dispose() });
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('kimiUsage.refresh', () => refresh()),
+    vscode.commands.registerCommand('kimiUsage.refresh', () => refresh(/* force */ true)),
     vscode.commands.registerCommand('kimiUsage.openConsole', () =>
       vscode.env.openExternal(vscode.Uri.parse(CONSOLE_URL))
     ),
@@ -114,14 +117,24 @@ async function renderStatus(): Promise<void> {
   statusBar.render(state, hasAuth);
 }
 
-async function refresh(): Promise<void> {
+async function refresh(force: boolean = false): Promise<void> {
   const token = await resolveToken();
   if (!token) {
     await renderStatus();
     return;
   }
+
+  // Cache-aware refresh: skip if within grace period unless forced
+  const now = Date.now();
+  if (!force && (now - lastFetchTimestamp) < CACHE_GRACE_MS) {
+    log(`Skipping refresh: within ${CACHE_GRACE_MS}ms grace period`);
+    return;
+  }
+
   statusBar.setLoading();
   const result = await fetchUsages(token);
+  lastFetchTimestamp = Date.now();
+
   if (result.ok && result.data) {
     applyUsagesToState(state, result.data);
   } else {
