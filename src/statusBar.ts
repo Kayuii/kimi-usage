@@ -95,24 +95,16 @@ export class StatusBar {
         `Resets in ${winReset}`;
     }
 
-    const sessionTok = state.sessionInputTokens + state.sessionOutputTokens;
-    const sessionDisplayText = sessionTok > 0
-      ? `${fmtTokens(sessionTok)} tok`
-      : `${state.sessionRequests} req`;
-
-    const sessionLine =
-      `\n\n**This session:** ${state.sessionRequests} requests\n\n` +
-      `In: ${state.sessionInputTokens} · Out: ${state.sessionOutputTokens} tokens`;
-
     const parallelLine = state.parallelLimit
       ? `\n\nParallel limit: ${state.parallelLimit}` : '';
 
     const updatedLine = state.lastUpdated
       ? `\n\n_Updated ${new Date(state.lastUpdated).toLocaleTimeString()}_` : '';
 
-    this.item.text = `${paceIcon} Kimi ${weeklyText} | ${sessionDisplayText}`;
+    // Simplified status bar: only show weekly % and window info
+    this.item.text = `${paceIcon} Kimi ${weeklyText}`;
     const md = new vscode.MarkdownString(
-      [weeklyLine, windowLine, sessionLine, parallelLine, updatedLine].join('')
+      [weeklyLine, windowLine, parallelLine, updatedLine].join('')
     );
     md.isTrusted = true;
     this.item.tooltip = md;
