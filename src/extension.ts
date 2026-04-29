@@ -38,9 +38,8 @@ export async function activate(context: vscode.ExtensionContext) {
   extensionContext = context;
   log('Kimi Usage extension activated');
 
-  // Initialize usage tracker for automatic monitoring
+  // Initialize usage tracker — auto-records deltas between successive API snapshots
   usageTracker = new UsageTracker(context);
-  usageTracker.startMonitoring();
   context.subscriptions.push({ dispose: () => usageTracker.dispose() });
 
   state.sessionInputTokens = context.globalState.get<number>('session.inputTokens', 0);
@@ -80,9 +79,6 @@ export async function activate(context: vscode.ExtensionContext) {
       async (opts: { inputTokens?: number; outputTokens?: number } = {}) => {
         const inputTokens = opts.inputTokens ?? 0;
         const outputTokens = opts.outputTokens ?? 0;
-        // Record to tracker (auto-tracked for history + CSV export)
-        usageTracker.recordUsage(inputTokens, outputTokens, 1);
-        // Also update session state for status bar display
         state.sessionInputTokens += inputTokens;
         state.sessionOutputTokens += outputTokens;
         state.sessionRequests += 1;
@@ -93,7 +89,13 @@ export async function activate(context: vscode.ExtensionContext) {
         ]);
         await renderStatus();
       }
-    )
+    ),
+    vscode.commands.registerCommand('kimiUsage.clearHistory', async () => {
+      usageTracker.clear();
+      await renderStatus();
+      DashboardPanel.refreshIfOpen(state);
+      vscode.window.showInformationMessage('Kimi usage history cleared.');
+    })
   );
 
   context.subscriptions.push(
@@ -149,6 +151,12 @@ async function refresh(force: boolean = false): Promise<void> {
 
   if (result.ok && result.data) {
     applyUsagesToState(state, result.data);
+    // Auto-record delta vs previous snapshot — this is how we "track session usage"
+    // without HTTP interception, mirroring kimi-quota-logger's approach.
+    const delta = usageTracker.recordSnapshot(state.weeklyUsed, state.windowUsed, state.windowResetAt);
+    if (delta && delta.weeklyDelta > 0) {
+      log(`Auto-tracked usage: +${delta.weeklyDelta} weekly, +${delta.windowDelta} window`);
+    }
   } else {
     state.error = result.error ?? 'Unknown error';
     state.authFailed = result.authFailed;

@@ -58,6 +58,11 @@
         "icon": "$(history)"
       },
       {
+        "command": "kimiUsage.clearHistory",
+        "title": "Kimi Usage: Clear Auto-tracked History",
+        "icon": "$(trash)"
+      },
+      {
         "command": "kimiUsage.showOutput",
         "title": "Kimi Usage: Show Output",
         "icon": "$(output)"

@@ -1,117 +1,135 @@
 import * as vscode from 'vscode';
 
 /**
- * Tracks Kimi Code usage by monitoring HTTP requests (similar to kimi-quota-logger Chrome extension).
- * 
- * This module intercepts requests to Kimi APIs to automatically capture token usage
- * without requiring manual recordUsage() calls.
+ * Auto-tracks Kimi usage by comparing successive API snapshots and storing the delta.
+ * Same idea as kimi-quota-logger: poll the official quota endpoint on a schedule,
+ * compute (currentUsed - previousUsed) and persist that as a usage event.
+ *
+ * No HTTP interception — purely state-diff based.
  */
 
-export interface UsageEntry {
+export interface UsageDelta {
   timestamp: number;
-  inputTokens: number;
-  outputTokens: number;
-  requests: number;
+  weeklyDelta: number;
+  windowDelta: number;
 }
 
-export interface UsageHistory {
-  entries: UsageEntry[];
-  lastSync: number;
+interface Snapshot {
+  weeklyUsed: number;
+  windowUsed: number;
+  windowResetAt: number | null;
+  timestamp: number;
 }
 
-const STORAGE_KEY = 'kimi.usageHistory';
-const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+interface PersistedHistory {
+  deltas: UsageDelta[];
+  lastSnapshot: Snapshot | null;
+}
+
+const STORAGE_KEY = 'kimi.usageHistory.v2';
+const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export class UsageTracker {
   private context: vscode.ExtensionContext;
-  private history: UsageHistory = { entries: [], lastSync: Date.now() };
-  private syncInterval: NodeJS.Timeout | undefined;
+  private deltas: UsageDelta[] = [];
+  private lastSnapshot: Snapshot | null = null;
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
-    this.loadHistory();
+    this.load();
   }
 
   /**
-   * Start monitoring usage with periodic sync to storage.
-   * Similar to kimi-quota-logger's background.js alarm handling.
+   * Feed a new quota snapshot from the API. If we have a previous snapshot,
+   * compute the delta and append it to history. Negative deltas (e.g. weekly
+   * reset, rate-window reset) are clamped to zero so they don't pollute totals.
    */
-  public startMonitoring(): void {
-    // Periodic sync every 5 minutes
-    this.syncInterval = setInterval(() => this.syncToStorage(), 5 * 60 * 1000);
-  }
+  public recordSnapshot(weeklyUsed: number | null, windowUsed: number | null, windowResetAt: number | null): UsageDelta | null {
+    if (weeklyUsed === null) return null;
 
-  /**
-   * Record a single API call with token usage.
-   * This is called by the `kimiUsage.recordUsage` command OR
-   * automatically detected from HTTP interceptor (future).
-   */
-  public recordUsage(inputTokens: number, outputTokens: number, requests: number = 1): void {
-    const entry: UsageEntry = {
-      timestamp: Date.now(),
-      inputTokens,
-      outputTokens,
-      requests
-    };
-    this.history.entries.push(entry);
-    this.pruneOldEntries();
-    this.syncToStorage();
-  }
-
-  /**
-   * Get usage statistics for a time period.
-   */
-  public getUsageInWindow(windowMs: number = 24 * 60 * 60 * 1000): UsageEntry {
     const now = Date.now();
-    const filtered = this.history.entries.filter((e) => now - e.timestamp <= windowMs);
+    const snap: Snapshot = {
+      weeklyUsed,
+      windowUsed: windowUsed ?? 0,
+      windowResetAt,
+      timestamp: now
+    };
+
+    let delta: UsageDelta | null = null;
+    if (this.lastSnapshot) {
+      const weeklyDelta = Math.max(0, snap.weeklyUsed - this.lastSnapshot.weeklyUsed);
+      // Window resets every few minutes; if reset boundary changed, treat as fresh window
+      const windowReset = snap.windowResetAt !== this.lastSnapshot.windowResetAt;
+      const windowDelta = windowReset ? snap.windowUsed : Math.max(0, snap.windowUsed - this.lastSnapshot.windowUsed);
+
+      if (weeklyDelta > 0 || windowDelta > 0) {
+        delta = { timestamp: now, weeklyDelta, windowDelta };
+        this.deltas.push(delta);
+        this.prune();
+      }
+    }
+
+    this.lastSnapshot = snap;
+    void this.persist();
+    return delta;
+  }
+
+  /** Sum of weekly-quota deltas observed within the last `windowMs`. */
+  public getUsageInWindow(windowMs: number): { weekly: number; window: number; samples: number } {
+    const cutoff = Date.now() - windowMs;
+    const filtered = this.deltas.filter((d) => d.timestamp > cutoff);
     return {
-      timestamp: now,
-      inputTokens: filtered.reduce((sum, e) => sum + e.inputTokens, 0),
-      outputTokens: filtered.reduce((sum, e) => sum + e.outputTokens, 0),
-      requests: filtered.reduce((sum, e) => sum + e.requests, 0)
+      weekly: filtered.reduce((s, d) => s + d.weeklyDelta, 0),
+      window: filtered.reduce((s, d) => s + d.windowDelta, 0),
+      samples: filtered.length
     };
   }
 
-  /**
-   * Get all usage history (for export/dashboard).
-   */
-  public getHistory(): UsageEntry[] {
-    return [...this.history.entries];
+  /** Sum of weekly-quota deltas in [now-windowMs*2, now-windowMs). */
+  public getUsageInPreviousWindow(windowMs: number): { weekly: number; window: number; samples: number } {
+    const now = Date.now();
+    const start = now - windowMs * 2;
+    const end = now - windowMs;
+    const filtered = this.deltas.filter((d) => d.timestamp > start && d.timestamp <= end);
+    return {
+      weekly: filtered.reduce((s, d) => s + d.weeklyDelta, 0),
+      window: filtered.reduce((s, d) => s + d.windowDelta, 0),
+      samples: filtered.length
+    };
   }
 
-  /**
-   * Clear usage history.
-   */
-  public clearHistory(): void {
-    this.history.entries = [];
-    this.syncToStorage();
+  public getDeltas(): UsageDelta[] {
+    return [...this.deltas];
   }
 
-  /**
-   * Stop monitoring and clean up.
-   */
+  public clear(): void {
+    this.deltas = [];
+    this.lastSnapshot = null;
+    void this.persist();
+  }
+
   public dispose(): void {
-    if (this.syncInterval) clearInterval(this.syncInterval);
-    this.syncToStorage();
+    void this.persist();
   }
 
   // ─────────────────────────── Private ───────────────────────────
 
-  private loadHistory(): void {
-    const stored = this.context.globalState.get<UsageHistory>(STORAGE_KEY);
-    if (stored && Array.isArray(stored.entries)) {
-      this.history = stored;
-      this.pruneOldEntries();
+  private load(): void {
+    const stored = this.context.globalState.get<PersistedHistory>(STORAGE_KEY);
+    if (stored && Array.isArray(stored.deltas)) {
+      this.deltas = stored.deltas;
+      this.lastSnapshot = stored.lastSnapshot ?? null;
+      this.prune();
     }
   }
 
-  private syncToStorage(): void {
-    this.history.lastSync = Date.now();
-    void this.context.globalState.update(STORAGE_KEY, this.history);
+  private persist(): Thenable<void> {
+    const payload: PersistedHistory = { deltas: this.deltas, lastSnapshot: this.lastSnapshot };
+    return this.context.globalState.update(STORAGE_KEY, payload);
   }
 
-  private pruneOldEntries(): void {
+  private prune(): void {
     const cutoff = Date.now() - HISTORY_RETENTION_MS;
-    this.history.entries = this.history.entries.filter((e) => e.timestamp > cutoff);
+    this.deltas = this.deltas.filter((d) => d.timestamp > cutoff);
   }
 }

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { QuotaState } from './types';
 import { UsageTracker } from './usageTracker';
-import { fmtHours, fmtTokens } from './utils';
+import { fmtHours } from './utils';
 
 export class DashboardPanel {
   private static current: DashboardPanel | undefined;
@@ -60,21 +60,44 @@ export class DashboardPanel {
 
   private renderUsageHistory(): string {
     if (!this.tracker) return '';
-    const history = this.tracker.getHistory();
-    if (history.length === 0) return '';
+    const deltas = this.tracker.getDeltas();
+    if (deltas.length === 0) {
+      return `
+  <h2>Auto-tracked Usage</h2>
+  <div class="muted">No usage detected yet. Deltas appear here as quota changes between API refreshes.</div>
+      `;
+    }
 
-    const daily = this.tracker.getUsageInWindow(24 * 60 * 60 * 1000);
-    const hourly = this.tracker.getUsageInWindow(60 * 60 * 1000);
+    const HOUR = 60 * 60 * 1000;
+    const DAY = 24 * HOUR;
+    const last1h = this.tracker.getUsageInWindow(HOUR);
+    const prev1h = this.tracker.getUsageInPreviousWindow(HOUR);
+    const last24h = this.tracker.getUsageInWindow(DAY);
+    const prev24h = this.tracker.getUsageInPreviousWindow(DAY);
+
+    const trend = (curr: number, prev: number): string => {
+      if (prev === 0 && curr === 0) return '<span class="muted">—</span>';
+      if (prev === 0) return `<span class="up">▲ new</span>`;
+      const diff = curr - prev;
+      const pct = Math.round((diff / prev) * 100);
+      if (diff === 0) return `<span class="muted">flat</span>`;
+      return diff > 0 ? `<span class="up">▲ ${pct}%</span>` : `<span class="down">▼ ${Math.abs(pct)}%</span>`;
+    };
 
     return `
-  <h2>Usage History (Auto-tracked)</h2>
-  <div class="kv">
-    <div class="k">Last 24h requests</div><div>${daily.requests}</div>
-    <div class="k">Last 24h tokens</div><div>${fmtTokens(daily.inputTokens + daily.outputTokens)}</div>
-    <div class="k">Last 1h requests</div><div>${hourly.requests}</div>
-    <div class="k">Last 1h tokens</div><div>${fmtTokens(hourly.inputTokens + hourly.outputTokens)}</div>
-    <div class="k">Total log entries</div><div>${history.length}</div>
-  </div>
+  <h2>Auto-tracked Usage <span class="muted" style="font-weight:normal;font-size:0.85em">(delta between API snapshots)</span></h2>
+  <table class="usage">
+    <thead>
+      <tr><th></th><th>Weekly used</th><th>Window used</th><th>Samples</th><th>Trend (weekly)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="k">Last 1h</td><td>${last1h.weekly}</td><td>${last1h.window}</td><td>${last1h.samples}</td><td>${trend(last1h.weekly, prev1h.weekly)}</td></tr>
+      <tr><td class="k">Previous 1h</td><td class="muted">${prev1h.weekly}</td><td class="muted">${prev1h.window}</td><td class="muted">${prev1h.samples}</td><td></td></tr>
+      <tr><td class="k">Last 24h</td><td>${last24h.weekly}</td><td>${last24h.window}</td><td>${last24h.samples}</td><td>${trend(last24h.weekly, prev24h.weekly)}</td></tr>
+      <tr><td class="k">Previous 24h</td><td class="muted">${prev24h.weekly}</td><td class="muted">${prev24h.window}</td><td class="muted">${prev24h.samples}</td><td></td></tr>
+    </tbody>
+  </table>
+  <div class="muted" style="margin-top:8px;font-size:0.85em">Total log entries: ${deltas.length} · Retained for 7 days</div>
     `;
   }
 
@@ -99,6 +122,12 @@ export class DashboardPanel {
     .kv .k { color: var(--vscode-descriptionForeground); }
     code { font-family: var(--vscode-editor-font-family); }
     .auth-warn { background: var(--vscode-inputValidation-warningBackground); padding: 8px 12px; border-left: 3px solid var(--vscode-inputValidation-warningBorder); margin-bottom: 16px; }
+    table.usage { border-collapse: collapse; margin: 8px 0; min-width: 480px; }
+    table.usage th, table.usage td { text-align: left; padding: 4px 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+    table.usage th { color: var(--vscode-descriptionForeground); font-weight: normal; font-size: 0.9em; }
+    table.usage td.k { color: var(--vscode-descriptionForeground); }
+    .up { color: var(--vscode-charts-red, #e74c3c); }
+    .down { color: var(--vscode-charts-green, #27ae60); }
   </style>
 </head>
 <body>
