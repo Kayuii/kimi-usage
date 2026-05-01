@@ -38,8 +38,11 @@ export interface QuotaState {
 
 export type AuthMode = 'oauth' | 'apiKey' | 'none';
 
+export type LanguageSetting = 'auto' | 'en' | 'zh-CN';
+
 export interface KimiConfig {
-  refreshIntervalMinutes: number;
+  refreshIntervalSeconds: number;
+  language: LanguageSetting;
 }
 
 export interface KimiOAuthCredentials {

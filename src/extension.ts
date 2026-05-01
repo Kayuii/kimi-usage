@@ -63,7 +63,9 @@ export async function activate(context: vscode.ExtensionContext) {
           DashboardPanel.refreshIfOpen(state);
         },
         openConsole: () => vscode.env.openExternal(vscode.Uri.parse(CONSOLE_URL)),
-        signOut: () => signOut()
+        signOut: () => signOut(),
+        openSettings: () =>
+          vscode.commands.executeCommand('workbench.action.openSettings', '@ext:kayuii.kimi-usage')
       });
       await refresh();
     }),
@@ -109,7 +111,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('kimiUsage.refreshIntervalMinutes')) scheduleRefresh();
+      if (e.affectsConfiguration('kimiUsage.refreshIntervalSeconds')) scheduleRefresh();
+      if (e.affectsConfiguration('kimiUsage.language')) DashboardPanel.refreshIfOpen(state);
     })
   );
 
@@ -178,8 +181,8 @@ async function refresh(force: boolean = false): Promise<void> {
 
 function scheduleRefresh(): void {
   if (refreshTimer) clearInterval(refreshTimer);
-  const minutes = Math.max(1, getConfig().refreshIntervalMinutes);
-  refreshTimer = setInterval(() => void refresh(), minutes * 60 * 1000);
+  const seconds = Math.max(30, getConfig().refreshIntervalSeconds);
+  refreshTimer = setInterval(() => void refresh(), seconds * 1000);
 }
 
 async function promptForApiKey(): Promise<void> {

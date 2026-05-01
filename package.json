@@ -71,11 +71,22 @@
     "configuration": {
       "title": "Kimi Usage",
       "properties": {
-        "kimiUsage.refreshIntervalMinutes": {
+        "kimiUsage.refreshIntervalSeconds": {
           "type": "number",
-          "default": 5,
-          "minimum": 1,
-          "description": "How often to refresh quota in minutes."
+          "default": 60,
+          "minimum": 30,
+          "description": "Refresh interval in seconds (minimum 30 seconds)."
+        },
+        "kimiUsage.language": {
+          "type": "string",
+          "enum": ["auto", "en", "zh-CN"],
+          "enumDescriptions": [
+            "Follow VS Code display language",
+            "English",
+            "简体中文"
+          ],
+          "default": "auto",
+          "description": "Display language for the dashboard (auto-detection or manual selection)."
         }
       }
     }

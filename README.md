@@ -69,7 +69,8 @@ The key is stored in SecretStorage too — never written to `settings.json`. OAu
 
 | Setting | Default | Description |
 |---|---|---|
-| `kimiUsage.refreshIntervalMinutes` | `5` | Polling interval (minutes) |
+| `kimiUsage.refreshIntervalSeconds` | `60` | Polling interval in seconds (minimum `30`) |
+| `kimiUsage.language` | `auto` | Dashboard language: `auto` / `en` / `zh-CN` |
 
 > Credentials are intentionally **not** exposed as settings; they live in SecretStorage and are managed via the `Sign In` / `Sign Out` / `Set API Key` commands.
 

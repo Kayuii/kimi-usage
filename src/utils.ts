@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { KimiConfig, KimiOAuthCredentials } from './types';
+import { KimiConfig, KimiOAuthCredentials, LanguageSetting } from './types';
 
 const SECRET_API_KEY = 'kimiUsage.apiKey';
 const SECRET_OAUTH = 'kimiUsage.oauthCredentials';
@@ -26,8 +26,10 @@ export function log(message: string): void {
 
 export function getConfig(): KimiConfig {
   const cfg = vscode.workspace.getConfiguration('kimiUsage');
+  const lang = cfg.get<LanguageSetting>('language', 'auto');
   return {
-    refreshIntervalMinutes: cfg.get<number>('refreshIntervalMinutes', 5)
+    refreshIntervalSeconds: cfg.get<number>('refreshIntervalSeconds', 60),
+    language: (['auto', 'en', 'zh-CN'].includes(lang) ? lang : 'auto') as LanguageSetting
   };
 }
 

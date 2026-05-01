@@ -1,14 +1,18 @@
 import * as vscode from 'vscode';
+import { Locale, makeT, resolveLocale } from './i18n';
 import { QuotaState } from './types';
 import { UsageTracker } from './usageTracker';
-import { fmtHours, fmtTokens } from './utils';
+import { fmtHours, fmtTokens, getConfig } from './utils';
 
 export interface DashboardCallbacks {
   refresh(): void | Promise<void>;
   clearHistory(): void | Promise<void>;
   openConsole(): void;
   signOut(): void | Promise<void>;
+  openSettings(): void;
 }
+
+type T = (key: string, ...params: Array<string | number>) => string;
 
 type TabId = 'today' | 'week' | 'session';
 
@@ -62,6 +66,7 @@ export class DashboardPanel {
         case 'clearHistory': await this.callbacks?.clearHistory(); break;
         case 'openConsole': this.callbacks?.openConsole(); break;
         case 'signOut': await this.callbacks?.signOut(); break;
+        case 'openSettings': this.callbacks?.openSettings(); break;
         case 'tabChanged':
           if (msg.tab === 'today' || msg.tab === 'week' || msg.tab === 'session') {
             this.currentTab = msg.tab;
@@ -84,8 +89,8 @@ export class DashboardPanel {
     while (this.disposables.length) this.disposables.pop()?.dispose();
   }
 
-  private fmtNum(n: number | null | undefined): string {
-    if (n === null || n === undefined) return '—';
+  private fmtNum(n: number | null | undefined, dash: string = '—'): string {
+    if (n === null || n === undefined) return dash;
     return n.toLocaleString();
   }
 
@@ -94,20 +99,22 @@ export class DashboardPanel {
     return Math.min(100, Math.round((used / limit) * 100));
   }
 
-  private renderSummaryCards(s: QuotaState): string {
+  private renderSummaryCards(s: QuotaState, t: T): string {
+    const dash = t('app.dash');
     const wPct = this.pct(s.weeklyUsed, s.weeklyLimit);
     const winPct = this.pct(s.windowUsed, s.windowLimit);
     const sessTotal = s.sessionInputTokens + s.sessionOutputTokens;
-    const weeklyReset = s.weeklyResetHours !== null ? fmtHours(Math.max(0, s.weeklyResetHours)) : '—';
-    const winReset = s.windowResetAt ? fmtHours((s.windowResetAt - Date.now()) / 3_600_000) : '—';
+    const weeklyReset = s.weeklyResetHours !== null ? fmtHours(Math.max(0, s.weeklyResetHours)) : dash;
+    const winReset = s.windowResetAt ? fmtHours((s.windowResetAt - Date.now()) / 3_600_000) : dash;
+    const reqKey = s.sessionRequests === 1 ? 'card.requests.one' : 'card.requests.other';
 
     const cards: Array<{ label: string; value: string; sub: string; accent?: string }> = [
-      { label: 'Weekly used', value: `${wPct}%`, sub: `${this.fmtNum(s.weeklyUsed)} / ${this.fmtNum(s.weeklyLimit)}`, accent: 'cost' },
-      { label: 'Weekly resets in', value: weeklyReset, sub: '7-day cycle' },
-      { label: 'Rate window used', value: `${winPct}%`, sub: `${this.fmtNum(s.windowUsed)} / ${this.fmtNum(s.windowLimit)}` },
-      { label: 'Window remaining', value: this.fmtNum(s.windowRemaining), sub: `Resets in ${winReset}` },
-      { label: 'Parallel limit', value: this.fmtNum(s.parallelLimit), sub: 'Concurrent requests' },
-      { label: 'Session tokens', value: fmtTokens(sessTotal), sub: `${s.sessionRequests} request${s.sessionRequests === 1 ? '' : 's'}` }
+      { label: t('card.weeklyUsed'), value: `${wPct}%`, sub: `${this.fmtNum(s.weeklyUsed, dash)} / ${this.fmtNum(s.weeklyLimit, dash)}`, accent: 'cost' },
+      { label: t('card.weeklyResetIn'), value: weeklyReset, sub: t('card.weeklyCycle') },
+      { label: t('card.windowUsed'), value: `${winPct}%`, sub: `${this.fmtNum(s.windowUsed, dash)} / ${this.fmtNum(s.windowLimit, dash)}` },
+      { label: t('card.windowRemaining'), value: this.fmtNum(s.windowRemaining, dash), sub: t('card.windowResetsIn', winReset) },
+      { label: t('card.parallelLimit'), value: this.fmtNum(s.parallelLimit, dash), sub: t('card.parallelSub') },
+      { label: t('card.sessionTokens'), value: fmtTokens(sessTotal), sub: t(reqKey, s.sessionRequests) }
     ];
 
     return `<div class="summary-grid">${cards
@@ -121,7 +128,10 @@ export class DashboardPanel {
       .join('')}</div>`;
   }
 
-  private renderChart(buckets: Array<{ key: string; label: string; weekly: number; window: number; samples: number }>): string {
+  private renderChart(
+    buckets: Array<{ key: string; label: string; weekly: number; window: number; samples: number }>,
+    t: T
+  ): string {
     const max = Math.max(...buckets.map((b) => b.weekly), 1);
     const maxHeight = 120;
     return `<div class="chart-bars">${buckets
@@ -133,7 +143,7 @@ export class DashboardPanel {
                data-weekly="${b.weekly}"
                data-window="${b.window}"
                data-samples="${b.samples}"
-               title="${escapeHtml(b.label)}: ${this.fmtNum(b.weekly)} weekly tokens">
+               title="${escapeHtml(t('chart.tooltip.weekly', b.label, this.fmtNum(b.weekly)))}">
           </div>
           <div class="chart-label">${escapeHtml(b.label)}</div>
         </div>`;
@@ -143,23 +153,24 @@ export class DashboardPanel {
 
   private renderBucketTable(
     buckets: Array<{ key: string; label: string; weekly: number; window: number; samples: number }>,
-    timeHeader: string
+    timeHeader: string,
+    t: T
   ): string {
     const totalSamples = buckets.reduce((s, b) => s + b.samples, 0);
     if (totalSamples === 0) {
       return `<div class="no-data" style="padding:24px;text-align:center">
-        <p class="muted">No usage recorded yet for this period. Snapshots are captured on every quota refresh.</p>
+        <p class="muted">${escapeHtml(t('noData'))}</p>
       </div>`;
     }
-    const rows = [...buckets].reverse(); // newest first in the table
+    const rows = [...buckets].reverse();
     return `<div class="daily-table-container">
       <table class="daily-table">
         <thead>
           <tr>
             <th>${escapeHtml(timeHeader)}</th>
-            <th>Weekly Δ</th>
-            <th>Window Δ</th>
-            <th>Samples</th>
+            <th>${escapeHtml(t('table.col.weeklyDelta'))}</th>
+            <th>${escapeHtml(t('table.col.windowDelta'))}</th>
+            <th>${escapeHtml(t('table.col.samples'))}</th>
           </tr>
         </thead>
         <tbody>
@@ -182,116 +193,118 @@ export class DashboardPanel {
     title: string,
     buckets: Array<{ key: string; label: string; weekly: number; window: number; samples: number }>,
     chartId: string,
-    timeHeader: string
+    timeHeader: string,
+    t: T
   ): string {
     return `<div class="daily-breakdown">
       <h3>${escapeHtml(title)}</h3>
       <div class="chart-tabs">
-        <button class="chart-tab active" data-metric="weekly">Weekly tokens Δ</button>
-        <button class="chart-tab" data-metric="window">Window tokens Δ</button>
-        <button class="chart-tab" data-metric="samples">Samples</button>
+        <button class="chart-tab active" data-metric="weekly">${escapeHtml(t('chart.metric.weekly'))}</button>
+        <button class="chart-tab" data-metric="window">${escapeHtml(t('chart.metric.window'))}</button>
+        <button class="chart-tab" data-metric="samples">${escapeHtml(t('chart.metric.samples'))}</button>
       </div>
       <div class="chart-container">
         <div class="chart-content" id="${chartId}">
-          ${this.renderChart(buckets)}
+          ${this.renderChart(buckets, t)}
         </div>
       </div>
-      ${this.renderBucketTable(buckets, timeHeader)}
+      ${this.renderBucketTable(buckets, timeHeader, t)}
     </div>`;
   }
 
-  private renderTodayTab(): string {
+  private renderTodayTab(t: T): string {
     const buckets = this.tracker?.getHourlyBuckets(24) ?? [];
-    return this.renderChartBlock('Last 24 hours', buckets, 'hourlyChart', 'Hour');
+    return this.renderChartBlock(t('chart.title.today'), buckets, 'hourlyChart', t('table.col.hour'), t);
   }
 
-  private renderWeekTab(): string {
+  private renderWeekTab(t: T): string {
     const buckets = this.tracker?.getDailyBuckets(7) ?? [];
-    return this.renderChartBlock('Last 7 days', buckets, 'dailyChart', 'Date');
+    return this.renderChartBlock(t('chart.title.week'), buckets, 'dailyChart', t('table.col.date'), t);
   }
 
-  private renderSessionTab(s: QuotaState): string {
+  private renderSessionTab(s: QuotaState, t: T): string {
     const total = s.sessionInputTokens + s.sessionOutputTokens;
     return `<div class="usage-summary">
       <div class="summary-grid">
         <div class="summary-item">
-          <div class="label">Requests</div>
+          <div class="label">${escapeHtml(t('session.requests'))}</div>
           <div class="value">${this.fmtNum(s.sessionRequests)}</div>
         </div>
         <div class="summary-item">
-          <div class="label">Input tokens</div>
+          <div class="label">${escapeHtml(t('session.inputTokens'))}</div>
           <div class="value">${this.fmtNum(s.sessionInputTokens)}</div>
         </div>
         <div class="summary-item">
-          <div class="label">Output tokens</div>
+          <div class="label">${escapeHtml(t('session.outputTokens'))}</div>
           <div class="value">${this.fmtNum(s.sessionOutputTokens)}</div>
         </div>
         <div class="summary-item">
-          <div class="label">Total tokens</div>
+          <div class="label">${escapeHtml(t('session.totalTokens'))}</div>
           <div class="value cost">${fmtTokens(total)}</div>
           <div class="sub muted">${this.fmtNum(total)}</div>
         </div>
       </div>
-      <p class="muted" style="margin-top:16px;font-size:0.9em">
-        Counters are accumulated via <code>kimiUsage.recordUsage</code> calls and persisted across reloads.
-        Use <code>Kimi Usage: Reset Session Counter</code> to clear them.
-      </p>
+      <p class="muted" style="margin-top:16px;font-size:0.9em">${t('session.note')}</p>
     </div>`;
   }
 
   private renderHtml(s: QuotaState): string {
-    const updated = s.lastUpdated ? new Date(s.lastUpdated).toLocaleString() : '—';
+    const locale: Locale = resolveLocale(getConfig().language, vscode.env.language);
+    const t = makeT(locale);
+    const dash = t('app.dash');
+    const updated = s.lastUpdated ? new Date(s.lastUpdated).toLocaleString() : dash;
     const tab = this.currentTab;
     const totalDeltas = this.tracker?.getDeltas().length ?? 0;
 
     const tabClass = (id: TabId): string => (tab === id ? 'active' : '');
 
     const banner = s.authFailed
-      ? '<div class="banner banner-error">Authentication failed. Please run <code>Kimi Usage: Sign In</code> or update your API key.</div>'
+      ? `<div class="banner banner-error">${t('banner.authFailed')}</div>`
       : s.error
-        ? `<div class="banner banner-error">Error: ${escapeHtml(s.error)}</div>`
+        ? `<div class="banner banner-error">${t('banner.error', escapeHtml(s.error))}</div>`
         : '';
 
     return /* html */ `<!DOCTYPE html>
-<html lang="en">
+<html lang="${escapeHtml(locale)}">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
-  <title>Kimi Usage</title>
+  <title>${escapeHtml(t('app.title'))}</title>
   <style>${this.getStyles()}</style>
 </head>
 <body>
   <div class="container">
     <header>
       <div>
-        <h1>Kimi Usage</h1>
-        <div class="muted last-updated">Last updated: ${escapeHtml(updated)}</div>
+        <h1>${escapeHtml(t('app.title'))}</h1>
+        <div class="muted last-updated">${escapeHtml(t('app.lastUpdated'))}: ${escapeHtml(updated)}</div>
       </div>
       <div class="actions">
-        <button class="btn" onclick="postCmd('refresh')">Refresh</button>
-        <button class="btn-secondary" onclick="postCmd('openConsole')">Console</button>
-        <button class="btn-secondary" onclick="postCmd('clearHistory')" title="Clear auto-tracked history">Clear history</button>
-        <button class="btn-secondary" onclick="postCmd('signOut')">Sign out</button>
+        <button class="btn" onclick="postCmd('refresh')">${escapeHtml(t('btn.refresh'))}</button>
+        <button class="btn-secondary" onclick="postCmd('openSettings')">${escapeHtml(t('btn.settings'))}</button>
+        <button class="btn-secondary" onclick="postCmd('openConsole')">${escapeHtml(t('btn.console'))}</button>
+        <button class="btn-secondary" onclick="postCmd('clearHistory')" title="${escapeHtml(t('btn.clearHistory.tooltip'))}">${escapeHtml(t('btn.clearHistory'))}</button>
+        <button class="btn-secondary" onclick="postCmd('signOut')">${escapeHtml(t('btn.signOut'))}</button>
       </div>
     </header>
 
     ${banner}
 
-    ${this.renderSummaryCards(s)}
+    ${this.renderSummaryCards(s, t)}
 
     <div class="tabs">
-      <button id="tab-today" class="tab ${tabClass('today')}" onclick="showTab('today')">Last 24h</button>
-      <button id="tab-week" class="tab ${tabClass('week')}" onclick="showTab('week')">Last 7 days</button>
-      <button id="tab-session" class="tab ${tabClass('session')}" onclick="showTab('session')">Session</button>
+      <button id="tab-today" class="tab ${tabClass('today')}" onclick="showTab('today')">${escapeHtml(t('tab.today'))}</button>
+      <button id="tab-week" class="tab ${tabClass('week')}" onclick="showTab('week')">${escapeHtml(t('tab.week'))}</button>
+      <button id="tab-session" class="tab ${tabClass('session')}" onclick="showTab('session')">${escapeHtml(t('tab.session'))}</button>
     </div>
 
-    <div id="today" class="tab-content ${tabClass('today')}">${this.renderTodayTab()}</div>
-    <div id="week" class="tab-content ${tabClass('week')}">${this.renderWeekTab()}</div>
-    <div id="session" class="tab-content ${tabClass('session')}">${this.renderSessionTab(s)}</div>
+    <div id="today" class="tab-content ${tabClass('today')}">${this.renderTodayTab(t)}</div>
+    <div id="week" class="tab-content ${tabClass('week')}">${this.renderWeekTab(t)}</div>
+    <div id="session" class="tab-content ${tabClass('session')}">${this.renderSessionTab(s, t)}</div>
 
-    <footer class="muted">Total log entries: ${totalDeltas} · Retained for 7 days · Snapshots are diffed between API refreshes.</footer>
+    <footer class="muted">${t('footer', totalDeltas)}</footer>
   </div>
-  <script>${this.getScript()}</script>
+  <script>${this.getScript(t)}</script>
 </body>
 </html>`;
   }
@@ -350,7 +363,12 @@ export class DashboardPanel {
     `;
   }
 
-  private getScript(): string {
+  private getScript(t: T): string {
+    const labels = JSON.stringify({
+      weekly: t('script.weeklyShort'),
+      window: t('script.windowShort'),
+      samples: t('script.samplesShort')
+    });
     return `
       const vscode = acquireVsCodeApi();
       function postCmd(cmd) { vscode.postMessage({ command: cmd }); }
@@ -366,7 +384,7 @@ export class DashboardPanel {
         }
       }
       const METRIC_CLASS = { weekly: 'weekly-bar', window: 'window-bar', samples: 'samples-bar' };
-      const METRIC_LABEL = { weekly: 'weekly Δ', window: 'window Δ', samples: 'samples' };
+      const METRIC_LABEL = ${labels};
       function rebuildChart(container, metric) {
         const bars = container.querySelectorAll('.chart-bar');
         if (!bars.length) return;
