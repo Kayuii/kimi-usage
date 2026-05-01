@@ -18,6 +18,8 @@
     "node_modules",
     ".vscode-test",
     "browser-ext",
-    "out"
+    "out",
+    "out-test",
+    "test"
   ]
 }
