@@ -2,7 +2,7 @@
   "name": "kimi-usage",
   "displayName": "Kimi Usage",
   "description": "Monitor Kimi Code quota usage in real-time, with OAuth device-flow sign-in.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "kayuii",
   "license": "MIT",
   "repository": {
@@ -79,7 +79,11 @@
         },
         "kimiUsage.language": {
           "type": "string",
-          "enum": ["auto", "en", "zh-CN"],
+          "enum": [
+            "auto",
+            "en",
+            "zh-CN"
+          ],
           "enumDescriptions": [
             "Follow VS Code display language",
             "English",
