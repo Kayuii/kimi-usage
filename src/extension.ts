@@ -55,7 +55,16 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.env.openExternal(vscode.Uri.parse(CONSOLE_URL))
     ),
     vscode.commands.registerCommand('kimiUsage.showDashboard', async () => {
-      DashboardPanel.show(state, context, usageTracker);
+      DashboardPanel.show(state, context, usageTracker, {
+        refresh: () => refresh(true),
+        clearHistory: async () => {
+          usageTracker.clear();
+          await renderStatus();
+          DashboardPanel.refreshIfOpen(state);
+        },
+        openConsole: () => vscode.env.openExternal(vscode.Uri.parse(CONSOLE_URL)),
+        signOut: () => signOut()
+      });
       await refresh();
     }),
     vscode.commands.registerCommand('kimiUsage.showOutput', () => getOutputChannel().show()),

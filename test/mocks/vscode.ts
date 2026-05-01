@@ -38,3 +38,31 @@ export const workspace = {
 // Type re-export so `import * as vscode from 'vscode'; vscode.SecretStorage`
 // works for type positions. Runtime callers must inject MemorySecretStorage.
 export type SecretStorage = MemorySecretStorage;
+
+export class MemoryMemento {
+  private data = new Map<string, unknown>();
+  keys(): readonly string[] {
+    return Array.from(this.data.keys());
+  }
+  get<T>(key: string, defaultValue?: T): T | undefined {
+    return (this.data.has(key) ? (this.data.get(key) as T) : defaultValue);
+  }
+  update(key: string, value: unknown): Thenable<void> {
+    if (value === undefined) this.data.delete(key);
+    else this.data.set(key, value);
+    return Promise.resolve();
+  }
+}
+
+export function makeContext(initial?: Record<string, unknown>): {
+  globalState: MemoryMemento;
+  subscriptions: Array<{ dispose: () => void }>;
+} {
+  const globalState = new MemoryMemento();
+  if (initial) {
+    for (const [k, v] of Object.entries(initial)) {
+      void globalState.update(k, v);
+    }
+  }
+  return { globalState, subscriptions: [] };
+}

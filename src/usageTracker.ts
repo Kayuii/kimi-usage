@@ -102,6 +102,61 @@ export class UsageTracker {
     return [...this.deltas];
   }
 
+  /**
+   * Bucket deltas into the last `hours` 1-hour bins ending at the current hour.
+   * Returns the buckets in chronological order (oldest first) so charts render left-to-right.
+   */
+  public getHourlyBuckets(hours: number): Array<{ key: string; label: string; weekly: number; window: number; samples: number }> {
+    const HOUR = 60 * 60 * 1000;
+    const now = Date.now();
+    const currentHour = Math.floor(now / HOUR) * HOUR;
+    const buckets: Array<{ key: string; label: string; weekly: number; window: number; samples: number }> = [];
+    for (let i = hours - 1; i >= 0; i--) {
+      const start = currentHour - i * HOUR;
+      const end = start + HOUR;
+      const d = new Date(start);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:00`;
+      const label = `${String(d.getHours()).padStart(2, '0')}:00`;
+      const items = this.deltas.filter((x) => x.timestamp >= start && x.timestamp < end);
+      buckets.push({
+        key,
+        label,
+        weekly: items.reduce((s, x) => s + x.weeklyDelta, 0),
+        window: items.reduce((s, x) => s + x.windowDelta, 0),
+        samples: items.length
+      });
+    }
+    return buckets;
+  }
+
+  /**
+   * Bucket deltas into the last `days` 1-day bins ending today (local time).
+   * Returns the buckets in chronological order (oldest first).
+   */
+  public getDailyBuckets(days: number): Array<{ key: string; label: string; weekly: number; window: number; samples: number }> {
+    const buckets: Array<{ key: string; label: string; weekly: number; window: number; samples: number }> = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayMs = today.getTime();
+    const DAY = 24 * 60 * 60 * 1000;
+    for (let i = days - 1; i >= 0; i--) {
+      const start = todayMs - i * DAY;
+      const end = start + DAY;
+      const d = new Date(start);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const label = `${d.getMonth() + 1}/${d.getDate()}`;
+      const items = this.deltas.filter((x) => x.timestamp >= start && x.timestamp < end);
+      buckets.push({
+        key,
+        label,
+        weekly: items.reduce((s, x) => s + x.weeklyDelta, 0),
+        window: items.reduce((s, x) => s + x.windowDelta, 0),
+        samples: items.length
+      });
+    }
+    return buckets;
+  }
+
   public clear(): void {
     this.deltas = [];
     this.lastSnapshot = null;
